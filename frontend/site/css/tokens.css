@@ -1,0 +1,48 @@
+/* 设计令牌：政府红头文件 × 米黄档案纸 × 印章红。
+   色板 oklch；双字体（ZCOOL XiaoWei 标题 / Noto Serif SC 正文）；无纯黑纯白。 */
+:root {
+  --paper: oklch(0.951 0.024 88);
+  --paper-2: oklch(0.923 0.03 86);
+  --paper-3: oklch(0.892 0.034 84);
+  --ink: oklch(0.255 0.022 52);
+  --ink-soft: oklch(0.42 0.02 54);
+  --ink-faint: oklch(0.585 0.018 60);
+  --rule: oklch(0.815 0.028 78);
+  --rule-strong: oklch(0.675 0.042 74);
+
+  /* 印章红：主强调色 */
+  --accent: oklch(0.485 0.185 26);
+  --accent-soft: oklch(0.6 0.15 28);
+  --accent-wash: oklch(0.928 0.05 30);
+  --seal: oklch(0.485 0.185 26);
+  --seal-wash: oklch(0.925 0.052 30);
+
+  /* 公文蓝：辅信息色 */
+  --info: oklch(0.42 0.075 252);
+  --info-wash: oklch(0.93 0.022 250);
+
+  --ok: oklch(0.455 0.085 156);
+  --ok-wash: oklch(0.928 0.03 156);
+  --warn: oklch(0.625 0.105 72);
+  --warn-wash: oklch(0.938 0.042 78);
+  --danger: oklch(0.495 0.16 27);
+  --danger-wash: oklch(0.928 0.045 28);
+
+  --font-display: 'ZCOOL XiaoWei', 'Songti SC', 'STSong', serif;
+  --font-body: 'Noto Serif SC', 'FangSong', 'STFangsong', 'Songti SC', serif;
+  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', ui-monospace, monospace;
+
+  --fs-xs: 0.71rem;
+  --fs-sm: 0.81rem;
+  --fs-md: 0.93rem;
+  --fs-lg: 1.15rem;
+  --fs-xl: clamp(1.45rem, 2.1vw, 2.05rem);
+  --fs-2xl: clamp(1.9rem, 3.2vw, 2.9rem);
+
+  --pad: clamp(14px, 1.6vw, 26px);
+  --rail: 234px;
+  --radius: 2px;
+  --shadow: 0 1px 0 oklch(0.82 0.03 78), 0 16px 32px -30px oklch(0.32 0.03 55 / 0.6);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --stamp-rotate: -9deg;
+}

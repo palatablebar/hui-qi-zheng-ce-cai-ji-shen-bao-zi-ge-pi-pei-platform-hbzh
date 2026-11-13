@@ -1,0 +1,8 @@
+"""限额常量。"""
+
+RATE_WINDOW_SECONDS = 60
+MAX_PAGE_SIZE = 200
+MAX_IMPORT_ROWS = 5000
+MAX_EXPORT_ROWS = 20000
+# 单次匹配运行最多评估的 (政策 × 企业) 组合数
+MAX_MATCH_PAIRS = 60000
