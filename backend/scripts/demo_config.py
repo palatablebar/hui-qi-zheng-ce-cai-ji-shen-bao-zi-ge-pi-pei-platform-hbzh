@@ -424,3 +424,54 @@ def build_companies() -> list[dict]:
 
 
 COMPANIES = build_companies()
+
+# ---------------------------------------------------------------- 画像更正台账（演示）
+# 选取首批重点客户，构造「工商回传 / 客户补录 / 年报核对」三类来源、不同确认状态的更正。
+# 仅 verified 的更正会在 seed 时回写画像（且回写值即演示值，保持匹配口径可复现）；
+# pending / rejected 不改变画像。键用 company 名称定位，避免依赖自增 id。
+SEED_CORRECTIONS: list[dict] = [
+    {
+        "company_name": "苏州锐驰精密机械有限公司",
+        "field": "rd_ratio",
+        "old_value": "2.8",
+        "new_value": "3.4",
+        "source": "annual",
+        "source_ref": "2025 年度年报（年报核对）",
+        "status": "verified",
+        "note": "年报研发费用归集口径调整，研发投入强度上调",
+        "seed_key": "seed-corr-ruichi-rd",
+    },
+    {
+        "company_name": "苏州锐驰精密机械有限公司",
+        "field": "revenue_wan",
+        "old_value": "8600",
+        "new_value": "9180",
+        "source": "registry",
+        "source_ref": "工商回传批次 GS-20261109",
+        "status": "pending",
+        "note": "工商年报营业收入与原台账不一致，待核验",
+        "seed_key": "seed-corr-ruichi-rev",
+    },
+    {
+        "company_name": "苏州恒达智能装备有限公司",
+        "field": "qualification",
+        "old_value": "高新技术企业、专精特新、科技型中小企业",
+        "new_value": "高新技术企业、专精特新、科技型中小企业、企业技术中心",
+        "source": "customer",
+        "source_ref": "客户补录表单 2026-11-11",
+        "status": "pending",
+        "note": "客户补充企业技术中心证书，待核验原件",
+        "seed_key": "seed-corr-hengda-quali",
+    },
+    {
+        "company_name": "苏州瑞泰软件科技有限公司",
+        "field": "employees",
+        "old_value": "138",
+        "new_value": "96",
+        "source": "registry",
+        "source_ref": "工商回传批次 GS-20261106",
+        "status": "rejected",
+        "note": "工商参保人数口径与在职人数不同，驳回待二次核对",
+        "seed_key": "seed-corr-ruitai-emp",
+    },
+]

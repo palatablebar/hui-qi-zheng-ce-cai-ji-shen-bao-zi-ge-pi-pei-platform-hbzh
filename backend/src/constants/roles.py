@@ -23,6 +23,7 @@ PERMISSIONS: dict[str, set[str]] = {
     Role.ADMIN.value: {
         "policy:read", "policy:write",
         "company:read", "company:write", "company:contact",
+        "correction:read", "correction:write",
         "rule:read", "rule:extract",
         "match:read", "match:run", "match:review",
         "export:read", "audit:read", "overview:read",
@@ -30,12 +31,14 @@ PERMISSIONS: dict[str, set[str]] = {
     Role.ANALYST.value: {
         "policy:read",
         "company:read", "company:write", "company:contact",
+        "correction:read", "correction:write",
         "rule:read", "rule:extract",
         "match:read", "match:run", "match:review",
         "export:read", "overview:read",
     },
     Role.VIEWER.value: {
-        "policy:read", "company:read", "rule:read", "match:read", "overview:read",
+        "policy:read", "company:read", "correction:read",
+        "rule:read", "match:read", "overview:read",
     },
 }
 

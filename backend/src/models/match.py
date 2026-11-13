@@ -34,5 +34,7 @@ class Match(Base):
     reviewer: Mapped[str | None] = mapped_column(String(160), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 匹配运行当时固化的企业画像快照：画像后续更正不影响本条结果，保证申报依据可回看
+    company_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

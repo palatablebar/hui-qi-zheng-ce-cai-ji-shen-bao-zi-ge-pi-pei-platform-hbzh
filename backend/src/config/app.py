@@ -23,6 +23,25 @@ def _bootstrap_database() -> None:
 
     wait_for_db()
     Base.metadata.create_all(bind=engine)
+    _ensure_additive_columns()
+
+
+def _ensure_additive_columns() -> None:
+    """幂等补全历史库缺失的新增列（create_all 只建新表、不改旧表）。
+
+    仅做「加列」这类向后兼容变更；复杂迁移仍建议引入 Alembic（见 migrations/README）。
+    """
+    from sqlalchemy import text
+
+    statements = (
+        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS company_snapshot JSON",
+    )
+    try:
+        with engine.begin() as conn:
+            for statement in statements:
+                conn.execute(text(statement))
+    except Exception as exc:  # noqa: BLE001 - 非 PG 数据库或无权限时不阻塞启动
+        logger.warning("additive column sync skipped: %s", exc)
 
 
 def _run_seed_once() -> None:

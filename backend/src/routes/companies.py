@@ -42,6 +42,15 @@ def get_company(company_id: int, db: Session = Depends(get_db), principal: dict 
     return company_controller.get_company(db, company_id, principal)
 
 
+@router.get("/{company_id}/corrections")
+def get_company_corrections(
+    company_id: int,
+    db: Session = Depends(get_db),
+    principal: dict = Depends(require_roles(*READ_ROLES)),
+) -> dict:
+    return company_controller.get_company_corrections(db, company_id)
+
+
 @router.post("", status_code=201)
 def create_company(
     payload: CompanyIn,

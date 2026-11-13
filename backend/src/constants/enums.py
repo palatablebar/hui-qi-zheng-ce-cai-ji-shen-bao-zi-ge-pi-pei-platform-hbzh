@@ -175,6 +175,69 @@ TRIGGER_LABELS: dict[str, str] = {
     TriggerKind.SEED.value: "初始化",
 }
 
+
+class CorrectionSource(StrEnum):
+    """画像更正来源：工商回传 / 客户补录 / 年报核对 / 人工修正。"""
+
+    REGISTRY = "registry"
+    CUSTOMER = "customer"
+    ANNUAL = "annual"
+    MANUAL = "manual"
+
+
+CORRECTION_SOURCE_LABELS: dict[str, str] = {
+    CorrectionSource.REGISTRY.value: "工商回传",
+    CorrectionSource.CUSTOMER.value: "客户补录",
+    CorrectionSource.ANNUAL.value: "年报核对",
+    CorrectionSource.MANUAL.value: "人工修正",
+}
+
+CORRECTION_SOURCE_ORDER: list[str] = [
+    CorrectionSource.REGISTRY.value,
+    CorrectionSource.CUSTOMER.value,
+    CorrectionSource.ANNUAL.value,
+    CorrectionSource.MANUAL.value,
+]
+
+# 来源可信度权重（0-1）：决定待核验提示与默认排序，不替代人工核验
+CORRECTION_SOURCE_TRUST: dict[str, float] = {
+    CorrectionSource.REGISTRY.value: 0.95,
+    CorrectionSource.ANNUAL.value: 0.9,
+    CorrectionSource.CUSTOMER.value: 0.7,
+    CorrectionSource.MANUAL.value: 0.8,
+}
+
+
+class CorrectionStatus(StrEnum):
+    """更正核验状态：待核验 / 已核验（值已入画像）/ 已驳回（不入画像）。"""
+
+    PENDING = "pending"
+    VERIFIED = "verified"
+    REJECTED = "rejected"
+
+
+CORRECTION_STATUS_LABELS: dict[str, str] = {
+    CorrectionStatus.PENDING.value: "待核验",
+    CorrectionStatus.VERIFIED.value: "已核验",
+    CorrectionStatus.REJECTED.value: "已驳回",
+}
+
+CORRECTION_STATUS_ORDER: list[str] = [
+    CorrectionStatus.PENDING.value,
+    CorrectionStatus.VERIFIED.value,
+    CorrectionStatus.REJECTED.value,
+]
+
+# 可被更正留痕的画像字段（口径与 RULE_FIELD 对齐，仅画像自有指标）
+PROFILE_FIELDS: tuple[str, ...] = (
+    RuleField.INDUSTRY.value,
+    RuleField.REGION.value,
+    RuleField.REVENUE_WAN.value,
+    RuleField.RD_RATIO.value,
+    RuleField.EMPLOYEES.value,
+    RuleField.QUALIFICATION.value,
+)
+
 # 置信度低于该值的条件进入「待人工确认」
 CONFIDENCE_REVIEW_THRESHOLD = 0.6
 # P0 判定：得分阈值 + 距截止日天数

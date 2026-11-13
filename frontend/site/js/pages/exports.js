@@ -48,14 +48,17 @@ export const exportsPage = {
         </div>
         <div class="panel-body export-block">
           <div class="export-note">
-            导出列：序号 / 运行编号 / 政策编号与标题 / 发文机关 / 申报截止 / 企业名称 / 行业 / 注册地 /
-            营业收入 / 研发占比 / 员工人数 / 匹配得分 / 优先级 / 硬条件 / 缺口提示 / 复核状态 / 复核人 / 备注。
-            排序：P0 → P1 → P2，同优先级按得分降序。只导出硬条件全部通过的企业。
+            申报清单列：序号 / 运行编号 / 政策编号与标题 / 发文机关 / 申报截止 / 企业名称 /
+            行业 / 注册地 / 营业收入 / 研发占比 / 员工人数 / 匹配得分 / 优先级 / 硬条件 / 缺口提示 /
+            复核状态 / 复核人 / 备注 / <b>画像口径 / 画像依据来源 / 快照时间</b>。
+            排序：P0 → P1 → P2，同优先级按得分降序。清单中的企业指标取<b>匹配当时固化的画像快照</b>，
+            画像后续更正不改变已导出清单，申报依据可回看。
           </div>
           <div class="filter-bar">
             <button class="btn accent" id="export-latest">导出本次运行（${latest ? latest.match_count : 0} 条）</button>
             <button class="btn ghost" id="export-all">导出全部匹配结果</button>
             <button class="btn ghost" id="export-policies">导出政策台账 CSV</button>
+            <button class="btn ghost" id="export-corrections">导出画像更正台账 CSV</button>
           </div>
         </div>
         ${table({
@@ -85,6 +88,9 @@ export const exportsPage = {
     });
     view.querySelector('#export-policies')?.addEventListener('click', () => {
       download('/api/exports/policies.csv', 'policyfit-policies.csv');
+    });
+    view.querySelector('#export-corrections')?.addEventListener('click', () => {
+      download('/api/exports/corrections.csv', 'policyfit-corrections.csv');
     });
     view.querySelectorAll('[data-export-run]').forEach((button) => {
       button.addEventListener('click', (event) => {

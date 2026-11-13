@@ -16,16 +16,22 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from src.config.database import session_scope
+from src.constants.enums import (
+    CORRECTION_SOURCE_TRUST,
+    CorrectionStatus,
+    RuleField,
+)
 from src.models.audit import AuditLog
 from src.models.company import Company
 from src.models.match import Match
 from src.models.match_run import MatchRun
 from src.models.policy import Policy
+from src.models.profile_correction import ProfileCorrection
 from src.models.rule import Rule
 from src.models.user import User
 from src.services import match_service, policy_service
 from src.utils.security import hash_password
-from src.utils.timeutil import parse_date
+from src.utils.timeutil import parse_date, utcnow
 
 from scripts.demo_config import (
     COMPANIES,
@@ -33,6 +39,7 @@ from scripts.demo_config import (
     DEMO_USERS,
     ORG,
     POLICIES,
+    SEED_CORRECTIONS,
     SEED_RUN,
 )
 
@@ -133,6 +140,68 @@ def ensure_match_run(db) -> MatchRun:
     )
 
 
+_CORRECTION_COLUMN = {
+    RuleField.INDUSTRY.value: "industry",
+    RuleField.REGION.value: "district",
+    RuleField.REVENUE_WAN.value: "revenue_wan",
+    RuleField.RD_RATIO.value: "rd_ratio",
+    RuleField.EMPLOYEES.value: "employees",
+    RuleField.QUALIFICATION.value: "qualifications",
+}
+
+
+def _coerce_correction_value(field: str, raw: str):
+    if field == RuleField.QUALIFICATION.value:
+        return [part.strip() for part in raw.replace(",", "、").split("、") if part.strip()]
+    if field in (RuleField.REVENUE_WAN.value, RuleField.RD_RATIO.value):
+        return float(raw)
+    if field == RuleField.EMPLOYEES.value:
+        return int(raw)
+    return raw
+
+
+def ensure_corrections(db) -> int:
+    """幂等写入画像更正台账；verified 更正回写画像，pending/rejected 不回写。
+
+    按 seed_key 去重，重复执行不重复落库；不覆盖人工核验状态。
+    """
+    name_map = {row.name: row for row in db.scalars(select(Company)).all()}
+    count = 0
+    for spec in SEED_CORRECTIONS:
+        if db.scalar(select(ProfileCorrection).where(ProfileCorrection.seed_key == spec["seed_key"])):
+            continue
+        company = name_map.get(spec["company_name"])
+        if company is None:
+            continue
+        new_value = _coerce_correction_value(spec["field"], spec["new_value"])
+        correction = ProfileCorrection(
+            company_id=company.id,
+            field=spec["field"],
+            old_value=spec["old_value"],
+            new_value=spec["new_value"],
+            source=spec["source"],
+            source_ref=spec["source_ref"],
+            status=spec["status"],
+            note=spec["note"],
+            trust_level=CORRECTION_SOURCE_TRUST.get(spec["source"], 0.8),
+            received_at=utcnow(),
+            submitted_by=SEED_RUN["operator_email"],
+            seed_key=spec["seed_key"],
+        )
+        if spec["status"] == CorrectionStatus.VERIFIED.value:
+            # 已核验更正回写画像；历史匹配已固化快照，不被重算
+            setattr(company, _CORRECTION_COLUMN[spec["field"]], new_value)
+            correction.verified_at = utcnow()
+            correction.verified_by = SEED_RUN["operator_email"]
+            correction.impact = {
+                "summary": "seed 演示更正：已核验并入画像；历史匹配保留当时快照，差异在下一次匹配生效"
+            }
+        db.add(correction)
+        count += 1
+    db.flush()
+    return count
+
+
 def ensure_audit(db) -> None:
     seeds = [
         ("seed-audit-1", "admin@policyfit.io", "admin", "policy.create", "policy", {"code": "P2026-ZJTX"}),
@@ -162,6 +231,7 @@ def seed_all() -> dict:
         ensure_rules(db, policies)
         ensure_companies(db)
         ensure_match_run(db)
+        ensure_corrections(db)
         ensure_audit(db)
 
         policy_count = db.scalar(select(func.count()).select_from(Policy)) or 0
@@ -171,6 +241,15 @@ def seed_all() -> dict:
         pending = db.scalar(select(func.count()).select_from(Match).where(Match.status == "pending")) or 0
         rules = db.scalar(select(func.count()).select_from(Rule)) or 0
         companies = db.scalar(select(func.count()).select_from(Company)) or 0
+        corrections = db.scalar(select(func.count()).select_from(ProfileCorrection)) or 0
+        correction_pending = (
+            db.scalar(
+                select(func.count())
+                .select_from(ProfileCorrection)
+                .where(ProfileCorrection.status == CorrectionStatus.PENDING.value)
+            )
+            or 0
+        )
         summary = (
             f"SEED_SUMMARY brand=policyfit users={users} sources={channels} "
             f"runs={runs} findings={matches} pending={pending}"
@@ -178,7 +257,8 @@ def seed_all() -> dict:
         print(summary, flush=True)
         print(
             f"SEED_DETAIL policies={policy_count} rules={rules} companies={companies} "
-            f"p0={db.scalar(select(func.count()).select_from(Match).where(Match.priority == 'P0')) or 0}",
+            f"p0={db.scalar(select(func.count()).select_from(Match).where(Match.priority == 'P0')) or 0} "
+            f"corrections={corrections} correction_pending={correction_pending}",
             flush=True,
         )
         return {
@@ -190,6 +270,8 @@ def seed_all() -> dict:
             "policies": policy_count,
             "rules": rules,
             "companies": companies,
+            "corrections": corrections,
+            "correction_pending": correction_pending,
         }
 
 

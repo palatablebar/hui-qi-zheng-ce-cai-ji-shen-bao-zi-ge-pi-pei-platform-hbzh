@@ -60,6 +60,32 @@ CREATE TABLE companies (
     updated_at      TIMESTAMP    NOT NULL
 );
 
+-- 画像更正台账：同一指标每次更正一条不可变留痕；只有 status='verified' 才回写 companies。
+CREATE TABLE profile_corrections (
+    id              SERIAL PRIMARY KEY,
+    company_id      INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    field           VARCHAR(24) NOT NULL,
+    old_value       TEXT,
+    new_value       TEXT,
+    source          VARCHAR(20) NOT NULL DEFAULT 'manual',
+    source_ref      VARCHAR(160) NOT NULL DEFAULT '',
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending',
+    note            TEXT,
+    trust_level     DOUBLE PRECISION NOT NULL DEFAULT 0.8,
+    received_at     TIMESTAMP NOT NULL,
+    submitted_by    VARCHAR(160) NOT NULL DEFAULT '',
+    verified_at     TIMESTAMP,
+    verified_by     VARCHAR(160),
+    verify_note     TEXT,
+    impact          JSON,
+    seed_key        VARCHAR(120) UNIQUE,
+    created_at      TIMESTAMP NOT NULL,
+    updated_at      TIMESTAMP NOT NULL
+);
+CREATE INDEX idx_corrections_company ON profile_corrections(company_id);
+CREATE INDEX idx_corrections_status ON profile_corrections(status);
+CREATE INDEX idx_corrections_received ON profile_corrections(received_at);
+
 CREATE TABLE match_runs (
     id              SERIAL PRIMARY KEY,
     run_no          VARCHAR(40)  NOT NULL UNIQUE,
@@ -91,6 +117,7 @@ CREATE TABLE matches (
     reviewer        VARCHAR(160),
     note            TEXT,
     payload         JSON,
+    company_snapshot JSON,
     created_at      TIMESTAMP NOT NULL,
     updated_at      TIMESTAMP NOT NULL,
     CONSTRAINT uq_matches_run_pair UNIQUE (run_id, policy_id, company_id)

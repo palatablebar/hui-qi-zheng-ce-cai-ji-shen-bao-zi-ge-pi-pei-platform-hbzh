@@ -28,3 +28,13 @@ def policies_csv(
     principal: dict = Depends(require_roles(*EXPORT_ROLES)),
 ):
     return export_controller.policies_csv(db, principal, request)
+
+
+@router.get("/corrections.csv")
+def corrections_csv(
+    request: Request,
+    company_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    principal: dict = Depends(require_roles(*EXPORT_ROLES)),
+):
+    return export_controller.corrections_csv(db, company_id, principal, request)

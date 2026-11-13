@@ -21,6 +21,13 @@ from src.utils.errors import AppError
 from src.utils.timeutil import iso_date, iso_utc, local_now, utcnow
 
 
+def _build_snapshot(company: Company) -> dict:
+    # 惰性导入：correction_service 依赖 match_engine，避免服务层初始化顺序耦合
+    from src.services.correction_service import build_snapshot
+
+    return build_snapshot(company)
+
+
 def next_run_no(db: Session) -> str:
     prefix = f"M{local_now():%Y%m%d}"
     count = db.scalar(select(func.count()).select_from(MatchRun).where(MatchRun.run_no.like(f"{prefix}%"))) or 0
@@ -76,6 +83,7 @@ def serialize_match(
         "reviewer": match.reviewer,
         "note": match.note,
         "payload": match.payload or {},
+        "company_snapshot": match.company_snapshot or {},
         "created_at": iso_utc(match.created_at),
         "updated_at": iso_utc(match.updated_at),
     }
@@ -165,14 +173,15 @@ def run_matching(
         }
         passed = 0
         for company in companies:
+            snapshot = _build_snapshot(company)
             company_ctx = {
-                "code": company.code,
-                "industry": company.industry,
-                "district": company.district,
-                "revenue_wan": company.revenue_wan,
-                "rd_ratio": company.rd_ratio,
-                "employees": company.employees,
-                "qualifications": company.qualifications or [],
+                "code": snapshot["code"],
+                "industry": snapshot["industry"],
+                "district": snapshot["district"],
+                "revenue_wan": snapshot["revenue_wan"],
+                "rd_ratio": snapshot["rd_ratio"],
+                "employees": snapshot["employees"],
+                "qualifications": snapshot["qualifications"],
             }
             result = match_engine.evaluate(company_ctx, rule_dicts, policy_ctx, reference)
             if not result["hard_pass"]:
@@ -192,6 +201,7 @@ def run_matching(
                     priority=result["priority"],
                     status="pending",
                     payload=result["payload"],
+                    company_snapshot=snapshot,
                 )
             )
         log_lines.append(
@@ -340,7 +350,55 @@ def detail(db: Session, match: Match) -> dict:
         if policy
         else None
     )
+    data["snapshot_basis"] = _snapshot_basis(match, company)
+    data["corrections"] = _company_corrections(db, match.company_id)
     return data
+
+
+def _snapshot_basis(match: Match, company: Company | None) -> dict:
+    """对照「匹配当时快照」与「企业当前画像」，标出匹配后被更正的字段。"""
+    snapshot = match.company_snapshot or {}
+    current = _build_snapshot(company) if company else {}
+    fields = ("industry", "district", "revenue_wan", "rd_ratio", "employees", "qualifications")
+    rows = []
+    for field in fields:
+        old = snapshot.get(field)
+        now = current.get(field)
+        rows.append(
+            {
+                "field": field,
+                "snapshot_value": old,
+                "current_value": now,
+                "changed_after_match": _encode_compare(old) != _encode_compare(now),
+            }
+        )
+    return {
+        "run_id": match.run_id,
+        "snapshot_at": iso_utc(match.created_at),
+        "fields": rows,
+        "frozen": True,
+    }
+
+
+def _encode_compare(value: object) -> str:
+    if isinstance(value, list):
+        return "、".join(str(item) for item in value)
+    return str(value)
+
+
+def _company_corrections(db: Session, company_id: int) -> list[dict]:
+    from src.models.profile_correction import ProfileCorrection
+    from src.services import correction_service
+
+    rows = list(
+        db.scalars(
+            select(ProfileCorrection)
+            .where(ProfileCorrection.company_id == company_id)
+            .order_by(ProfileCorrection.received_at.desc(), ProfileCorrection.id.desc())
+            .limit(20)
+        ).all()
+    )
+    return [correction_service.serialize(row) for row in rows]
 
 
 def review(db: Session, match: Match, *, status: str, note: str | None, reviewer: str) -> Match:

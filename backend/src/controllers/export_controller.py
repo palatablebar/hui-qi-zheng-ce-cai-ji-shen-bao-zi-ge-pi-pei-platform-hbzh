@@ -50,3 +50,25 @@ def policies_csv(db: Session, principal: dict, request: Request) -> Response:
         media_type="text/csv; charset=utf-8",
         headers=csv_response_headers("policyfit-policies.csv"),
     )
+
+
+def corrections_csv(
+    db: Session, company_id: int | None, principal: dict, request: Request
+) -> Response:
+    content, count = export_service.corrections_csv(db, company_id)
+    audit_service.record(
+        db,
+        actor_email=principal["email"],
+        actor_role=principal["role"],
+        action="export.corrections",
+        entity="profile_correction",
+        entity_id=company_id,
+        detail={"rows": count, "bytes": len(content)},
+        ip=_ip(request),
+    )
+    db.commit()
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers=csv_response_headers("policyfit-corrections.csv"),
+    )

@@ -34,14 +34,16 @@ export const ROLE_LABELS = {
 export const PERMISSIONS = {
   admin: [
     'overview:read', 'policy:read', 'policy:write', 'company:read', 'company:write',
+    'correction:read', 'correction:write',
     'rule:read', 'rule:extract', 'match:read', 'match:run', 'match:review',
     'export:read', 'audit:read',
   ],
   analyst: [
     'overview:read', 'policy:read', 'company:read', 'company:write',
+    'correction:read', 'correction:write',
     'rule:read', 'rule:extract', 'match:read', 'match:run', 'match:review', 'export:read',
   ],
-  viewer: ['overview:read', 'policy:read', 'company:read', 'rule:read', 'match:read'],
+  viewer: ['overview:read', 'policy:read', 'company:read', 'correction:read', 'rule:read', 'match:read'],
 };
 
 export const ENUMS = {
@@ -51,6 +53,13 @@ export const ENUMS = {
   review: { pending: '待复核', confirmed: '已确认', dismissed: '已驳回' },
   runStatus: { queued: '排队中', running: '执行中', success: '成功', partial: '部分成功', failed: '失败' },
   trigger: { manual: '手动', schedule: '定时', seed: '初始化' },
+  correctionSource: {
+    registry: '工商回传',
+    customer: '客户补录',
+    annual: '年报核对',
+    manual: '人工修正',
+  },
+  correctionStatus: { pending: '待核验', verified: '已核验', rejected: '已驳回' },
   ruleField: {
     industry: '所属行业',
     region: '注册地',
@@ -62,6 +71,23 @@ export const ENUMS = {
   },
   ruleOp: { '<=': '不超过', '>=': '不低于', '==': '等于', in: '属于' },
 };
+
+export const CORRECTION_FIELD_OPTIONS = [
+  { value: 'industry', label: '所属行业' },
+  { value: 'region', label: '注册地' },
+  { value: 'revenue_wan', label: '营业收入(万元)' },
+  { value: 'rd_ratio', label: '研发占比(%)' },
+  { value: 'employees', label: '员工人数' },
+  { value: 'qualification', label: '企业资质' },
+];
+
+export function correctionStatusTone(status) {
+  return { pending: 'warn', verified: 'ok', rejected: 'danger' }[status] || 'info';
+}
+
+export function correctionSourceTone(source) {
+  return { registry: 'ok', annual: 'ok', customer: 'warn', manual: 'info' }[source] || 'info';
+}
 
 export function can(role, permission) {
   return (PERMISSIONS[role] || []).includes(permission);

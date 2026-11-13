@@ -28,17 +28,28 @@ def matches_csv(db: Session, run_id: int | None = None) -> tuple[bytes, int]:
     policies = {item.id: item for item in db.scalars(select(Policy)).all()}
     companies = {item.id: item for item in db.scalars(select(Company)).all()}
     runs = {item.id: item for item in db.scalars(select(MatchRun)).all()}
+    # 该企业最近一次「已核验」更正来源，作为画像依据列（快照值本身来自历次已核验更正）
+    latest_verified = _latest_verified_source(db)
     matches.sort(key=lambda item: (PRIORITY_SORT.get(item.priority, 9), -(item.score or 0), item.id))
     headers = [
         "序号", "运行编号", "政策编号", "政策标题", "发文机关", "申报截止",
         "企业名称", "所属行业", "注册地", "营业收入(万元)", "研发占比(%)",
         "员工人数", "匹配得分", "优先级", "硬条件", "缺口提示", "复核状态", "复核人", "复核备注",
+        "画像口径", "画像依据来源", "快照时间",
     ]
     rows = []
     for index, item in enumerate(matches, start=1):
         policy = policies.get(item.policy_id)
         company = companies.get(item.company_id)
         run = runs.get(item.run_id)
+        snapshot = item.company_snapshot or {}
+        # 申报依据以匹配当时固化的快照为准，画像后续更正不改变本清单
+        industry = snapshot.get("industry") or (company.industry if company else "")
+        district = snapshot.get("district") or (company.district if company else "")
+        revenue = snapshot.get("revenue_wan")
+        rd_ratio = snapshot.get("rd_ratio")
+        employees = snapshot.get("employees")
+        source_label = latest_verified.get(item.company_id, "")
         rows.append(
             [
                 index,
@@ -47,12 +58,12 @@ def matches_csv(db: Session, run_id: int | None = None) -> tuple[bytes, int]:
                 policy.title if policy else "",
                 policy.issuer if policy else "",
                 policy.deadline.isoformat() if policy and policy.deadline else "",
-                company.name if company else "",
-                company.industry if company else "",
-                company.district if company else "",
-                f"{company.revenue_wan:g}" if company else "",
-                f"{company.rd_ratio:g}" if company else "",
-                company.employees if company else "",
+                snapshot.get("name") or (company.name if company else ""),
+                industry,
+                district,
+                f"{revenue:g}" if revenue is not None else "",
+                f"{rd_ratio:g}" if rd_ratio is not None else "",
+                employees if employees is not None else "",
                 f"{item.score:.1f}",
                 PRIORITY_LABELS.get(item.priority, item.priority),
                 "通过" if item.hard_pass else "未通过",
@@ -60,9 +71,78 @@ def matches_csv(db: Session, run_id: int | None = None) -> tuple[bytes, int]:
                 REVIEW_STATUS_LABELS.get(item.status, item.status),
                 item.reviewer or "",
                 item.note or "",
+                "匹配时快照（不受后续更正影响）" if snapshot else "当前画像",
+                source_label,
+                item.created_at.strftime("%Y-%m-%d %H:%M") if item.created_at else "",
             ]
         )
     return to_csv(headers, rows), len(matches)
+
+
+def _latest_verified_source(db: Session) -> dict[int, str]:
+    """每家企业最近一条已核验更正的来源标签。"""
+    from src.constants.enums import CORRECTION_SOURCE_LABELS
+    from src.models.profile_correction import ProfileCorrection
+
+    rows = list(
+        db.scalars(
+            select(ProfileCorrection)
+            .where(ProfileCorrection.status == "verified")
+            .order_by(ProfileCorrection.verified_at.desc(), ProfileCorrection.id.desc())
+        ).all()
+    )
+    result: dict[int, str] = {}
+    for row in rows:
+        if row.company_id not in result:
+            result[row.company_id] = CORRECTION_SOURCE_LABELS.get(row.source, row.source)
+    return result
+
+
+def corrections_csv(db: Session, company_id: int | None = None) -> tuple[bytes, int]:
+    from src.constants.enums import (
+        CORRECTION_SOURCE_LABELS,
+        CORRECTION_STATUS_LABELS,
+        RULE_FIELD_LABELS,
+    )
+    from src.models.profile_correction import ProfileCorrection
+
+    stmt = select(ProfileCorrection)
+    if company_id:
+        stmt = stmt.where(ProfileCorrection.company_id == company_id)
+    rows_data = list(
+        db.scalars(
+            stmt.order_by(ProfileCorrection.received_at.desc(), ProfileCorrection.id.desc())
+        ).all()
+    )
+    company_map = {item.id: item for item in db.scalars(select(Company)).all()}
+    headers = [
+        "序号", "企业编号", "企业名称", "更正字段", "更正前", "更正后",
+        "来源", "来源单号", "可信度", "收到时间", "确认状态",
+        "核验人", "核验时间", "核验备注", "影响摘要",
+    ]
+    rows = []
+    for index, item in enumerate(rows_data, start=1):
+        company = company_map.get(item.company_id)
+        rows.append(
+            [
+                index,
+                company.code if company else "",
+                company.name if company else "",
+                RULE_FIELD_LABELS.get(item.field, item.field),
+                item.old_value or "",
+                item.new_value or "",
+                CORRECTION_SOURCE_LABELS.get(item.source, item.source),
+                item.source_ref or "",
+                f"{item.trust_level:.2f}",
+                item.received_at.strftime("%Y-%m-%d %H:%M") if item.received_at else "",
+                CORRECTION_STATUS_LABELS.get(item.status, item.status),
+                item.verified_by or "",
+                item.verified_at.strftime("%Y-%m-%d %H:%M") if item.verified_at else "",
+                item.verify_note or "",
+                (item.impact or {}).get("summary", ""),
+            ]
+        )
+    return to_csv(headers, rows), len(rows_data)
 
 
 def policies_csv(db: Session) -> tuple[bytes, int]:

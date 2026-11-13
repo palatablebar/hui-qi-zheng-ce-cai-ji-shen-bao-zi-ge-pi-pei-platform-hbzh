@@ -1,5 +1,13 @@
 import { api } from '../api.js';
-import { ENUMS, can, priorityTone, reviewTone, runTone } from '../config.js';
+import {
+  ENUMS,
+  can,
+  correctionSourceTone,
+  correctionStatusTone,
+  priorityTone,
+  reviewTone,
+  runTone,
+} from '../config.js';
 import {
   drawer,
   emptyState,
@@ -16,6 +24,88 @@ import {
 } from '../ui.js';
 
 const state = { runId: '', priority: '', status: '', q: '' };
+
+const SNAPSHOT_FIELD_LABELS = {
+  industry: '所属行业',
+  district: '注册地',
+  revenue_wan: '营业收入(万元)',
+  rd_ratio: '研发占比(%)',
+  employees: '员工人数',
+  qualifications: '企业资质',
+};
+
+function fmtFieldValue(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (Array.isArray(value)) return value.length ? value.join('、') : '—';
+  return String(value);
+}
+
+function snapshotBasis(basis) {
+  if (!basis || !basis.fields || basis.fields.length === 0) return '';
+  const changed = basis.fields.filter((f) => f.changed_after_match);
+  return `<h3 style="margin:14px 0 6px;font-size:0.96rem">得分依据 · 匹配当时画像快照（已固化）</h3>
+    <div class="snapshot-note">
+      快照时间 ${fmtTime(basis.snapshot_at)} ｜ 本条结果不随后续画像更正而变化，重跑匹配只生成新运行、不覆盖旧结果。
+      ${changed.length ? `<br /><b style="color:var(--danger)">该企业在本次匹配后有 ${changed.length} 个字段被更正，下方标「已变更」；差异在下一次匹配生效。</b>` : '<br />本次匹配后画像指标未发生更正，快照与当前画像一致。'}
+    </div>
+    <div class="table-wrap"><table class="data snapshot-table">
+      <thead><tr><th>字段</th><th>匹配时快照（申报依据）</th><th>当前画像</th><th>状态</th></tr></thead>
+      <tbody>
+        ${basis.fields
+          .map(
+            (f) => `<tr class="${f.changed_after_match ? 'row-changed' : ''}">
+              <td>${esc(SNAPSHOT_FIELD_LABELS[f.field] || f.field)}</td>
+              <td class="mono">${esc(fmtFieldValue(f.snapshot_value))}</td>
+              <td class="mono">${esc(fmtFieldValue(f.current_value))}</td>
+              <td>${f.changed_after_match ? '<span class="badge warn">已变更</span>' : '<span class="badge ok">一致</span>'}</td>
+            </tr>`,
+          )
+          .join('')}
+      </tbody>
+    </table></div>`;
+}
+
+function correctionImpact(corrections) {
+  if (!corrections || corrections.length === 0) {
+    return `<h3 style="margin:14px 0 6px;font-size:0.96rem">更正前后影响</h3>
+      <div class="empty"><div class="mark">该企业暂无画像更正</div></div>`;
+  }
+  const verified = corrections.filter((c) => c.status === 'verified');
+  return `<h3 style="margin:14px 0 6px;font-size:0.96rem">更正前后影响（仅已核验值进入匹配）</h3>
+    <div class="correction-list">${corrections
+      .slice(0, 6)
+      .map((c) => {
+        const impactItems = (c.impact && c.impact.items) || [];
+        const impactRows = impactItems
+          .map(
+            (it) => `<div class="impact-row ${it.changed ? 'changed' : ''}">
+              <span class="mono">${esc(it.run_no)}</span>
+              <span>${esc(it.policy_code)}</span>
+              <span class="mono">${Number(it.score_before).toFixed(1)} → <b>${Number(it.score_after).toFixed(1)}</b>
+                ${it.score_delta ? `<em class="${it.score_delta > 0 ? 'up' : 'down'}">（${it.score_delta > 0 ? '+' : ''}${it.score_delta}）</em>` : ''}
+              </span>
+              <span>${it.changed ? '<span class="badge warn">口径变化</span>' : '<span class="badge ok">无影响</span>'}</span>
+            </div>`,
+          )
+          .join('');
+        return `<article class="correction-card">
+          <div class="correction-head">
+            <span class="badge ${correctionStatusTone(c.status)}">${esc(c.status_label)}</span>
+            <span class="badge ${correctionSourceTone(c.source)}">${esc(c.source_label)}</span>
+            <b>${esc(c.field_label)}</b>
+            <span class="mono muted">${fmtTime(c.received_at)}</span>
+          </div>
+          <div class="correction-flow">
+            <span class="old">${esc(fmtFieldValue(c.old_value))}</span><i>→</i>
+            <span class="new">${esc(fmtFieldValue(c.new_value))}</span>
+          </div>
+          ${c.impact && c.impact.summary ? `<p class="correction-impact">${esc(c.impact.summary)}</p>` : ''}
+          ${impactRows ? `<div class="impact-list">${impactRows}</div>` : ''}
+        </article>`;
+      })
+      .join('')}</div>
+    ${verified.length === 0 ? '<p class="mono muted" style="margin-top:6px">当前没有已核验更正；待核验/已驳回值均不影响画像与匹配。</p>' : ''}`;
+}
 
 function scoreParts(payload) {
   const parts = payload?.score_parts || {};
@@ -56,47 +146,69 @@ function scoreParts(payload) {
 
 function openMatch(view, ctx, item) {
   const canReview = can(ctx.user.role, 'match:review');
-  const payload = item.payload || {};
   const { root, close } = drawer({
     title: `${item.company_name} → ${item.policy_title}`,
     subtitle: `${item.policy_code} · 得分 ${Number(item.score).toFixed(1)} · ${item.priority_label}`,
-    body: `${kv([
-      ['匹配得分', scoreBar(item.score)],
-      ['优先级', `<span class="badge ${priorityTone(item.priority)}">${esc(item.priority_label)}</span>`],
-      ['硬条件', item.hard_pass ? '<span class="badge ok">全部通过</span>' : '<span class="badge danger">未通过</span>'],
-      ['申报截止', esc(item.policy_deadline || '—')],
-      ['企业行业/注册地', `${esc(item.company_industry)} / ${esc(item.company_district)}`],
-      ['复核状态', `<span class="badge ${reviewTone(item.status)}">${esc(item.status_label)}</span>`],
-      ['复核人', esc(item.reviewer || '—')],
-      ['复核备注', esc(item.note || '—')],
-      ['生成时间', fmtTime(item.created_at)],
+    body: `<div class="empty"><div class="mark">正在调取匹配依据与画像快照…</div></div>`,
+  });
+
+  (async () => {
+    let detail;
+    try {
+      detail = await api.get(`/api/matches/${item.id}`);
+    } catch (err) {
+      root.querySelector('.drawer-body').innerHTML = errorBox(errorMessage(err));
+      return;
+    }
+    const payload = detail.payload || {};
+    root.querySelector('.drawer-body').innerHTML = `${kv([
+      ['匹配得分', scoreBar(detail.score)],
+      ['优先级', `<span class="badge ${priorityTone(detail.priority)}">${esc(detail.priority_label)}</span>`],
+      ['硬条件', detail.hard_pass ? '<span class="badge ok">全部通过</span>' : '<span class="badge danger">未通过</span>'],
+      ['申报截止', esc(detail.policy_deadline || '—')],
+      ['企业行业/注册地', `${esc(detail.company_industry)} / ${esc(detail.company_district)}`],
+      ['复核状态', `<span class="badge ${reviewTone(detail.status)}">${esc(detail.status_label)}</span>`],
+      ['复核人', esc(detail.reviewer || '—')],
+      ['复核备注', esc(detail.note || '—')],
+      ['生成时间', fmtTime(detail.created_at)],
     ])}
     <h3 style="margin:12px 0 6px;font-size:0.96rem">缺口提示</h3>
-    ${gapList(item.gaps)}
-    ${scoreParts(payload)}`,
-    footer: canReview
-      ? `<form id="review-form" style="display:grid;gap:10px">
-          ${field({ label: '复核结论', name: 'status', value: item.status, options: Object.entries(ENUMS.review).map(([value, label]) => ({ value, label })) })}
-          ${field({ label: '备注（写清判定依据）', name: 'note', value: item.note || '', placeholder: '例如：研发占比差 0.2pt，建议补强后再报' })}
+    ${gapList(detail.gaps)}
+    ${scoreParts(payload)}
+    ${snapshotBasis(detail.snapshot_basis)}
+    ${correctionImpact(detail.corrections)}`;
+
+    if (canReview) {
+      const footer = document.createElement('div');
+      footer.className = 'drawer-foot';
+      footer.innerHTML = `<form id="review-form" style="display:grid;gap:10px">
+          ${field({ label: '复核结论', name: 'status', value: detail.status, options: Object.entries(ENUMS.review).map(([value, label]) => ({ value, label })) })}
+          ${field({ label: '备注（写清判定依据）', name: 'note', value: detail.note || '', placeholder: '例如：研发占比差 0.2pt，建议补强后再报' })}
           <button class="btn accent" type="submit">提交复核</button>
-        </form>`
-      : '<span class="mono muted">客户经理为只读角色，不能复核（后端返回 403）</span>',
-  });
-  root.querySelector('#review-form')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    try {
-      await api.patch(`/api/matches/${item.id}/review`, {
-        status: form.status.value,
-        note: form.note.value.trim() || null,
+        </form>`;
+      root.querySelector('.drawer').appendChild(footer);
+      footer.querySelector('#review-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.target;
+        try {
+          await api.patch(`/api/matches/${detail.id}/review`, {
+            status: form.status.value,
+            note: form.note.value.trim() || null,
+          });
+          toast('复核结果已入卷');
+          close();
+          await matchesPage.render(view, ctx);
+        } catch (err) {
+          toast(errorMessage(err), 'err');
+        }
       });
-      toast('复核结果已入卷');
-      close();
-      await matchesPage.render(view, ctx);
-    } catch (err) {
-      toast(errorMessage(err), 'err');
+    } else {
+      const note = document.createElement('div');
+      note.className = 'drawer-foot';
+      note.innerHTML = '<span class="mono muted">客户经理为只读角色，不能复核（后端返回 403）</span>';
+      root.querySelector('.drawer').appendChild(note);
     }
-  });
+  })();
 }
 
 function openRunForm(view, ctx, policies, latestRun) {
